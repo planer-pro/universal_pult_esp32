@@ -68,6 +68,12 @@ void BackToLcdMainMenu();
 void sendAnswer(String text);
 int getNextID();
 String getProtocolName(decode_type_t protocol);
+void lcdBacklightControl();
+void resetBacklightTimer();
+
+// Переменные для управления подсветкой
+unsigned long lastActivityTime;
+bool lcdBacklightOn = true;
 
 void setup()
 {
@@ -168,30 +174,26 @@ void setup()
     irsend.begin();
 
     displayMainMenu();
+
+    // Инициализация таймера подсветки
+    lastActivityTime = millis();
 }
 
 // Функция для подключения к WiFi с повторными попытками
 
 void loop()
 {
+    lcdBacklightControl(); // Управление подсветкой
     btn.tick();
 
     if (btn.hasClicks())
     {
+        resetBacklightTimer(); // Сбрасываем таймер при активности
         static bool enDisplay = true;
         uint8_t btnCnt = btn.getClicks();
 
         switch (btnCnt)
         {
-        case 1:
-            enDisplay = !enDisplay;
-#ifdef USE_LCD_DISPLAY
-            enDisplay ? lcd.backlight() : lcd.noBacklight();
-#endif
-#ifdef USE_OLED_DISPLAY
-            enDisplay ? oled.backlight() : oled.noBacklight();
-#endif
-            break;
         case 2:
             btnPressed = true;
             break;
@@ -205,6 +207,7 @@ void loop()
 
     if (btn.hold() || clearAllCodes)
     {
+        resetBacklightTimer(); // Сбрасываем таймер при активности
         displayInfo(1, F("Deleting dataCodes.txt..."), 1000);
         sendAnswer(F("Deleting dataCodes.txt..."));
         if (SD.exists("/dataCodes.txt"))
@@ -256,6 +259,7 @@ void loop()
             // Запись ИК-кода при получении
             if (irrecv.decode(&results))
             {
+                resetBacklightTimer(); // Сбрасываем таймер при активности
                 // Проверяем, не слишком ли длинный код
                 if (results.bits > 0 && results.bits <= 64)
                 {
@@ -352,6 +356,7 @@ void loop()
     {
         if (commandID > 0)
         {
+            resetBacklightTimer(); // Сбрасываем таймер при активности
             // Используем кэшированные данные вместо чтения с SD-карты
             bool found = false;
             decode_type_t protocol = NEC;
@@ -654,4 +659,27 @@ void sendAnswer(String text)
         // Логирование ошибки
         Serial.println("Error: Failed to send message to queue");
     }
+}
+
+void lcdBacklightControl()
+{
+#ifdef USE_LCD_DISPLAY
+    if (LCD_BACKLIGHT_TIMEOUT_S > 0 && lcdBacklightOn && (millis() - lastActivityTime > (LCD_BACKLIGHT_TIMEOUT_S * 1000)))
+    {
+        lcd.noBacklight();
+        lcdBacklightOn = false;
+    }
+#endif
+}
+
+void resetBacklightTimer()
+{
+#ifdef USE_LCD_DISPLAY
+    if (!lcdBacklightOn)
+    {
+        lcd.backlight();
+        lcdBacklightOn = true;
+    }
+#endif
+    lastActivityTime = millis();
 }
